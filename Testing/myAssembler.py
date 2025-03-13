@@ -30,7 +30,7 @@ pseudoInstructions = {
     'bgt': {'real_op': 'slt', 'branch_op': 'bne', 'format': 'branch_cond', 'invert': True},   # bgt rs, rt, label -> slt $1, rt, rs; bne $1, $0, label
     'ble': {'real_op': 'slt', 'branch_op': 'beq', 'format': 'branch_cond', 'invert': True},   # ble rs, rt, label -> slt $1, rt, rs; beq $1, $0, label
     'jal': {'format': 'jal'},  # jal label -> special hardcoded instruction + j label
-    'jr': {'format': 'jr'},    # jr $ra -> special hardcoded instruction to retrieve ra
+    'jr': {'format': 'jr'},    # jr $ra -> special hardcoded instruction to get ra
 }
 
 def _handlejalInstruction(operands):
@@ -102,15 +102,16 @@ def expandPseudoInstruction(operation, operands):
         rs = operands[0]
         rt = operands[1]
         label = operands[2]
+		
         
         # If invert is True, swap registers for operations like bgt/ble
         if pseudo_info['invert']:
             rs, rt = rt, rs
             
         # First instruction: slt $1, rs, rt
-        slt_instruction = f"{pseudo_info['real_op']} $1 {rs} {rt}"
+        slt_instruction = f"{pseudo_info['real_op']} $6 {rs} {rt}"
         # Second instruction: beq/bne $1, $0, label
-        branch_instruction = f"{pseudo_info['branch_op']} $1 $0 {label}"
+        branch_instruction = f"{pseudo_info['branch_op']} $6 $0 {label}"
         
         expanded_instructions.append(slt_instruction)
         expanded_instructions.append(branch_instruction)
@@ -325,6 +326,6 @@ def assemblyToHex(infilename,outfilename):
 			
 
 if __name__ == "__main__":
-	inputfile = "tests/test_my_functions.asm"  
+	inputfile = "tests/my_tests/test_pseudo_bge_negative_offset.asm"  
 	outputfile = inputfile.split(".")[0] + ".hex"
 	assemblyToHex(inputfile,outputfile)
