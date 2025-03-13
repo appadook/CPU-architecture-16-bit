@@ -22,42 +22,54 @@ functionDict = {'sub':'011','add':'000', 'and':'001', 'or':'010', 'slt':'100'}
 opcodeDict = {'addi':'000', 'andi':'001', 'ori':'010', 'lw':'011', 'sw':'100', 'beq':'111', 'bne':'101'}
 j = '110'
 
-# Dictionary defining pseudo-instructions and their expansions
+
 pseudoInstructions = {
     'move': {'real_op': 'add', 'format': 'R', 'template': '{rd} {rs} $0'},     # move rd, rs -> add rd, rs, $0
     'blt': {'real_op': 'slt', 'branch_op': 'bne', 'format': 'branch_cond', 'invert': False},  # blt rs, rt, label -> slt $1, rs, rt; bne $1, $0, label
     'bge': {'real_op': 'slt', 'branch_op': 'beq', 'format': 'branch_cond', 'invert': False},  # bge rs, rt, label -> slt $1, rs, rt; beq $1, $0, label
     'bgt': {'real_op': 'slt', 'branch_op': 'bne', 'format': 'branch_cond', 'invert': True},   # bgt rs, rt, label -> slt $1, rt, rs; bne $1, $0, label
     'ble': {'real_op': 'slt', 'branch_op': 'beq', 'format': 'branch_cond', 'invert': True},   # ble rs, rt, label -> slt $1, rt, rs; beq $1, $0, label
-    'jar': {'format': 'jar'},  # jar label -> special hardcoded instruction + j label
+    'jal': {'format': 'jal'},  # jal label -> special hardcoded instruction + j label
+    'jr': {'format': 'jr'},    # jr $ra -> special hardcoded instruction to retrieve ra
 }
 
-def _handleJarInstruction(operands):
+def _handlejalInstruction(operands):
+	"""
+	Private function to handle jal (jump and link) pseudo-instruction.
+	Returns a list of strings, each representing a machine code instruction.
+	
+	jal label is broken down into:
+	1. A special hardcoded instruction (0000000000000110 in binary = 0006 in hex)
+	   This instruction saves the return address to $7 ($ra)
+	2. A regular jump (j label) to the target address
+	"""
+	expanded_instructions = []
+	
+	# First instruction is the hardcoded save-return-address instruction (1100000000000110)
+	# This corresponds to a special opcode that the hardware recognizes for saving PC+1 to $7
+	save_ra_instruction = '000000000000110'
+	expanded_instructions.append(save_ra_instruction)
+	
+	# Second instruction is a regular jump to the target address
+	if len(operands) == 1:
+		address = operands[0]
+		jump_instruction = I_TYPE + j + int2bs(address, 12)
+		expanded_instructions.append(jump_instruction)
+	else:
+		raise ValueError(f"jal instruction expects exactly one operand, got {len(operands)}")
+	
+	return expanded_instructions
+
+def _handleJrInstruction():
     """
-    Private function to handle jar (jump and register) pseudo-instruction.
-    Returns a list of strings, each representing a machine code instruction.
+    Private function to handle jr (jump register) instruction.
+    Returns the hardcoded binary string for retrieving the return address from $ra ($7).
     
-    jar label is broken down into:
-    1. A special hardcoded instruction (1100000000000110 in binary = C006 in hex)
-       This instruction saves the return address to $7 ($ra)
-    2. A regular jump (j label) to the target address
+    The hardcoded value 1011000000000111 represents:
+    - A special instruction that jumps to the address stored in $ra (register $7)
     """
-    expanded_instructions = []
-    
-    # First instruction is the hardcoded save-return-address instruction (1100000000000110)
-    # This corresponds to a special opcode that the hardware recognizes for saving PC+1 to $7
-    save_ra_instruction = '1100000000000110'
-    expanded_instructions.append(save_ra_instruction)
-    
-    # Second instruction is a regular jump to the target address
-    if len(operands) == 1:
-        address = operands[0]
-        jump_instruction = I_TYPE + j + int2bs(address, 12)
-        expanded_instructions.append(jump_instruction)
-    else:
-        raise ValueError(f"jar instruction expects exactly one operand, got {len(operands)}")
-    
-    return expanded_instructions
+    # Hardcoded binary for the jr $ra instruction
+    return '0000000000000111'  # This corresponds to 0007 in hex
 
 def expandPseudoInstruction(operation, operands):
     """
@@ -70,9 +82,12 @@ def expandPseudoInstruction(operation, operands):
     pseudo_info = pseudoInstructions[operation]
     expanded_instructions = []
     
-    if operation == 'jar':
-        # Special handling for jar pseudo-instruction
-        return _handleJarInstruction(operands)
+    if operation == 'jal':
+        # Special handling for jal pseudo-instruction
+        return _handlejalInstruction(operands)
+    elif operation == 'jr':
+        # Special handling for jr instruction
+        return [_handleJrInstruction()]
     elif pseudo_info['format'] == 'R':
         # Handle simple register format pseudo-ops like 'move'
         template = pseudo_info['real_op'] + " " + pseudo_info['template']
@@ -204,7 +219,7 @@ def convertAssemblyToMachineCode(inline):
 				elif i == 2:  # Third operand is immediate
 					outstring += int2bs(oprand, BITS_PER_IMMEDIATE)
 		else:
-			# For R-type: <rs> <rt> <rd> <funct>
+			# For R-type: <rd> <rt> <rs> <funct>
 			print(f"Processing R-type instruction operands: {words[1:]}")
 			operands = words[1:]
 			for i, oprand in enumerate(operands):
@@ -257,12 +272,16 @@ def assemblyToHex(infilename,outfilename):
 			if expanded:
 				print(f"Expanded to: {expanded}")
 				# Add all expanded instructions to expanded_lines, not directly to outlines
-				if operation == 'jar':
-					# For jar, we need to convert the binary strings to assembly instructions
+				if operation == 'jal':
+					# For jal, we need to convert the binary strings to assembly instructions
 					# First instruction: Special "save return address" instruction
 					expanded_lines.append("__special_savereturn__")  # Use a placeholder that won't conflict
 					# Second instruction: Jump instruction
 					expanded_lines.append(f"j {operands[0]}")
+				elif operation == 'jr':
+					# For jr, add the hardcoded instruction directly to outlines
+					outlines.append(_handleJrInstruction())
+					print(f"Added jr instruction: {bs2hex(_handleJrInstruction())}")
 				else:
 					expanded_lines.extend(expanded)
 				continue
@@ -275,10 +294,10 @@ def assemblyToHex(infilename,outfilename):
 		print(f"\n--- Converting line {i+1}: '{curline}' ---")
 		try:
 			if curline == "__special_savereturn__":
-				# This is our special jar first instruction
-				outstring = '1100000000000110'  # Hardcoded binary for C006
+				# This is our special jal first instruction
+				outstring = '0000000000000110'  # Hardcoded binary for 0006
 				outlines.append(outstring)
-				print(f"Added special jar instruction: {bs2hex(outstring)}")
+				print(f"Added special jal instruction: {bs2hex(outstring)}")
 			else:
 				outstring = convertAssemblyToMachineCode(curline)	
 				if outstring != '':
@@ -305,6 +324,6 @@ def assemblyToHex(infilename,outfilename):
 			
 
 if __name__ == "__main__":
-	inputfile = "tests/my_tests/test_pseudo_jar.asm"  # Use the correct path without my_tests
+	inputfile = "tests/test_functions.asm"  
 	outputfile = inputfile.split(".")[0] + ".hex"
 	assemblyToHex(inputfile,outputfile)
