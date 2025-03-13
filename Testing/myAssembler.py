@@ -86,8 +86,8 @@ def expandPseudoInstruction(operation, operands):
         # Special handling for jal pseudo-instruction
         return _handlejalInstruction(operands)
     elif operation == 'jr':
-        # Special handling for jr instruction
-        return [_handleJrInstruction()]
+        # Special handling for jr instruction - return a marker to be processed later
+        return ["__special_return__"]
     elif pseudo_info['format'] == 'R':
         # Handle simple register format pseudo-ops like 'move'
         template = pseudo_info['real_op'] + " " + pseudo_info['template']
@@ -271,17 +271,13 @@ def assemblyToHex(infilename,outfilename):
 			expanded = expandPseudoInstruction(operation, operands)
 			if expanded:
 				print(f"Expanded to: {expanded}")
-				# Add all expanded instructions to expanded_lines, not directly to outlines
+				# Add all expanded instructions to expanded_lines
 				if operation == 'jal':
 					# For jal, we need to convert the binary strings to assembly instructions
 					# First instruction: Special "save return address" instruction
 					expanded_lines.append("__special_savereturn__")  # Use a placeholder that won't conflict
 					# Second instruction: Jump instruction
 					expanded_lines.append(f"j {operands[0]}")
-				elif operation == 'jr':
-					# For jr, add the hardcoded instruction directly to outlines
-					outlines.append(_handleJrInstruction())
-					print(f"Added jr instruction: {bs2hex(_handleJrInstruction())}")
 				else:
 					expanded_lines.extend(expanded)
 				continue
@@ -294,10 +290,15 @@ def assemblyToHex(infilename,outfilename):
 		print(f"\n--- Converting line {i+1}: '{curline}' ---")
 		try:
 			if curline == "__special_savereturn__":
-				# This is our special jal first instruction
+				# This is our special jal first instruction - add binary directly
 				outstring = '0000000000000110'  # Hardcoded binary for 0006
 				outlines.append(outstring)
 				print(f"Added special jal instruction: {bs2hex(outstring)}")
+			elif curline == "__special_return__":
+				# This is our special jr instruction - add binary directly
+				outstring = '0000000000000111'  # Hardcoded binary for 0007
+				outlines.append(outstring)
+				print(f"Added special jr instruction: {bs2hex(outstring)}")
 			else:
 				outstring = convertAssemblyToMachineCode(curline)	
 				if outstring != '':
@@ -324,6 +325,6 @@ def assemblyToHex(infilename,outfilename):
 			
 
 if __name__ == "__main__":
-	inputfile = "tests/test_functions.asm"  
+	inputfile = "tests/test_my_functions.asm"  
 	outputfile = inputfile.split(".")[0] + ".hex"
 	assemblyToHex(inputfile,outputfile)
