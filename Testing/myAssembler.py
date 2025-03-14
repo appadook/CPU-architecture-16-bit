@@ -102,7 +102,11 @@ def expandPseudoInstruction(operation, operands):
         rs = operands[0]
         rt = operands[1]
         label = operands[2]
-		
+        label_int = int(label)
+        if label_int < 0:
+            label_int += -1
+        
+        label = str(label_int)
         
         # If invert is True, swap registers for operations like bgt/ble
         if pseudo_info['invert']:
